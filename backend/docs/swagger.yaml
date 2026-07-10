@@ -1,0 +1,452 @@
+openapi: 3.0.3
+info:
+  title: Warehouse Item Management API
+  description: >
+    REST API for managing warehouse items, locations, and stock.
+    Built with Go (Gin), PostgreSQL, and optional Redis caching.
+    All responses use a standard envelope format.
+  version: 1.0.0
+  contact:
+    name: Warehouse API Team
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: http://localhost:8080/api/v1
+    description: API base path
+
+tags:
+  - name: Items
+    description: Warehouse item master data
+  - name: Stock
+    description: Stock receive and check operations
+  - name: Locations
+    description: Warehouse locations (bonus)
+  - name: Health
+    description: Service health check
+
+paths:
+  /api/v1/items:
+    post:
+      tags: [Items]
+      summary: Create a new item
+      description: Adds a new warehouse item. SKU must be unique.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemCreateRequest'
+      responses:
+        '201':
+          description: Item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate SKU
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Items]
+      summary: List items
+      description: Returns a paginated list of items, optionally filtered by category.
+      parameters:
+        - name: category
+          in: query
+          description: Filter items by category
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number (1-based)
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: limit
+          in: query
+          description: Items per page
+          required: false
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Paginated list of items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+
+  /api/v1/items/{id}:
+    get:
+      tags: [Items]
+      summary: Get item by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Item detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags: [Items]
+      summary: Update an item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemCreateRequest'
+      responses:
+        '200':
+          description: Item updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate SKU
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Items]
+      summary: Soft delete an item
+      description: Marks the item as deleted (sets deleted_at) without removing the row.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Item deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/stock/receive:
+    post:
+      tags: [Stock]
+      summary: Receive stock into a location
+      description: >
+        Adds (or creates) stock for an item at a location.
+        Qty must be a positive integer. Every receive is logged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockReceiveRequest'
+      responses:
+        '201':
+          description: Stock received
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Validation error (e.g. qty <= 0)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Referenced item or location not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/stock/{item_id}:
+    get:
+      tags: [Stock]
+      summary: Check stock for an item across all locations
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Stock detail for the item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/locations:
+    get:
+      tags: [Locations]
+      summary: List all locations
+      responses:
+        '200':
+          description: List of locations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /api/v1/items-categories:
+    get:
+      tags: [Items]
+      summary: List distinct item categories
+      description: Helper endpoint for the frontend category filter dropdown.
+      responses:
+        '200':
+          description: List of category names
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+components:
+  schemas:
+    ItemCreateRequest:
+      type: object
+      required: [sku, name, category, unit]
+      properties:
+        sku:
+          type: string
+          maxLength: 100
+          example: SKU-001
+        name:
+          type: string
+          maxLength: 255
+          example: Widget A
+        category:
+          type: string
+          maxLength: 100
+          example: Electronics
+        unit:
+          type: string
+          maxLength: 50
+          example: pcs
+
+    Item:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        sku:
+          type: string
+          example: SKU-001
+        name:
+          type: string
+          example: Widget A
+        category:
+          type: string
+          example: Electronics
+        unit:
+          type: string
+          example: pcs
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    StockReceiveRequest:
+      type: object
+      required: [item_id, location_id, qty]
+      properties:
+        item_id:
+          type: integer
+          format: int64
+          example: 1
+        location_id:
+          type: integer
+          format: int64
+          example: 1
+        qty:
+          type: integer
+          minimum: 1
+          example: 50
+
+    StockWithDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        item_id:
+          type: integer
+          format: int64
+        item_sku:
+          type: string
+        item_name:
+          type: string
+        location_id:
+          type: integer
+          format: int64
+        location_code:
+          type: string
+        zone:
+          type: string
+        qty:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+
+    Meta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 10
+        total:
+          type: integer
+          format: int64
+          example: 42
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Item retrieved successfully
+        data:
+          oneOf:
+            - $ref: '#/components/schemas/Item'
+            - type: array
+              items:
+                $ref: '#/components/schemas/Item'
+            - $ref: '#/components/schemas/StockWithDetail'
+            - type: array
+              items:
+                $ref: '#/components/schemas/StockWithDetail'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    PaginatedResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Items retrieved successfully
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Item'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    FieldError:
+      type: object
+      properties:
+        field:
+          type: string
+          example: sku
+        reason:
+          type: string
+          example: Duplicate entry
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: SKU already exists
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
